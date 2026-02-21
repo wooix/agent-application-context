@@ -13,7 +13,9 @@ aac start 시 이 Context가 기동되어:
 
 from __future__ import annotations
 
+import asyncio
 import uuid
+from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -22,6 +24,7 @@ import structlog
 
 from aac.aspects.audit_logging import AuditLoggingHandler
 from aac.aspects.engine import AspectContext, AspectEngine, AspectEventType
+from aac.runtime.base import StreamChunk
 from aac.aspects.execution_logging import ExecutionLoggingHandler
 from aac.aspects.tool_tracking import ToolTrackingHandler
 from aac.di.skill_registry import SkillRegistry
@@ -80,6 +83,10 @@ class AgentApplicationContext:
 
         # TX 카운터
         self._tx_counter = 0
+
+        # 비동기 실행 저장소 (Issue #15)
+        self._executions: dict[str, dict[str, Any]] = {}
+        self._execution_tasks: dict[str, asyncio.Task] = {}
 
     @property
     def is_started(self) -> bool:
@@ -312,6 +319,190 @@ class AgentApplicationContext:
             "duration_ms": result.duration_ms,
             "model": result.model,
         }
+
+    async def stream_execute(
+        self,
+        agent_name: str,
+        prompt: str,
+        *,
+        context: dict[str, Any] | None = None,
+    ) -> AsyncIterator[StreamChunk]:
+        """Agent 스트리밍 실행 — SSE용 (DR-5).
+
+        Yields:
+            StreamChunk (text | tool_call | error | done)
+        """
+        agent = self.get_agent(agent_name)
+
+        # lazy 초기화
+        if agent.status == AgentStatus.LAZY:
+            manifest = self._manifests.get(agent_name)
+            if manifest and self._factory:
+                new_agent = await self._factory.create(manifest)
+                self._agents[agent_name] = new_agent
+                agent = new_agent
+
+        if agent.runtime is None:
+            yield StreamChunk(type="error", content=f"Agent '{agent_name}'의 runtime 미초기화")
+            yield StreamChunk(type="done")
+            return
+
+        # ID 생성
+        session_id = f"sess_{_short_uuid()}"
+        self._tx_counter += 1
+        tx_id = f"tx_{self._tx_counter:03d}"
+        execution_id = f"exec_{_short_uuid()}"
+
+        aac_log(agent_name, session_id, tx_id, f'▶ STREAMING query: "{prompt[:80]}"')
+
+        # Aspect: PreQuery
+        aspect_ctx = AspectContext(
+            agent_name=agent_name,
+            session_id=session_id,
+            tx_id=tx_id,
+            execution_id=execution_id,
+            prompt=prompt,
+        )
+        await self._aspect_engine.apply(AspectEventType.PRE_QUERY, aspect_ctx)
+
+        agent.status = AgentStatus.EXECUTING
+
+        # 스트리밍 메타 정보 전송
+        yield StreamChunk(
+            type="text",
+            content="",
+            metadata={
+                "execution_id": execution_id,
+                "session_id": session_id,
+                "tx_id": tx_id,
+            },
+        )
+
+        # tool 정보 구성
+        tools_for_runtime = [
+            {"name": t.name, "description": t.description}
+            for t in agent.tools
+        ] if agent.tools else None
+
+        # runtime.stream() 호출
+        async for chunk in agent.runtime.stream(
+            prompt,
+            system_prompt=agent.system_prompt,
+            tools=tools_for_runtime,
+            context=context,
+            max_turns=agent.max_turns,
+            timeout_seconds=agent.timeout_seconds,
+        ):
+            yield chunk
+
+            # done 청크에서 통계 업데이트
+            if chunk.type == "done":
+                cost = chunk.metadata.get("cost_usd", 0.0)
+                duration = chunk.metadata.get("duration_ms", 0)
+                agent.query_count += 1
+                agent.total_cost_usd += cost
+                agent.total_duration_ms += duration
+                aspect_ctx.cost_usd = cost
+                aspect_ctx.duration_ms = duration
+                aspect_ctx.model = chunk.metadata.get("model", "")
+
+            if chunk.type == "error":
+                aspect_ctx.error = chunk.content
+
+        agent.status = AgentStatus.READY
+
+        # Aspect: PostQuery / OnError
+        if aspect_ctx.error:
+            await self._aspect_engine.apply(AspectEventType.ON_ERROR, aspect_ctx)
+        await self._aspect_engine.apply(AspectEventType.POST_QUERY, aspect_ctx)
+
+        aac_log(agent_name, session_id, tx_id, "✓ STREAM COMPLETED")
+
+    # ─── 비동기 실행 (Issue #15) ─────────────────────────
+
+    async def execute_async(
+        self,
+        agent_name: str,
+        prompt: str,
+        *,
+        context: dict[str, Any] | None = None,
+    ) -> str:
+        """비동기 실행 — 즉시 execution_id 반환, 백그라운드 실행.
+
+        Returns:
+            execution_id
+        """
+        execution_id = f"exec_{_short_uuid()}"
+
+        self._executions[execution_id] = {
+            "execution_id": execution_id,
+            "agent": agent_name,
+            "prompt": prompt,
+            "status": "running",
+            "result": None,
+            "error": None,
+            "cost_usd": 0.0,
+            "duration_ms": 0,
+            "model": "",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "completed_at": None,
+        }
+
+        task = asyncio.create_task(
+            self._run_async_execution(execution_id, agent_name, prompt, context)
+        )
+        self._execution_tasks[execution_id] = task
+
+        return execution_id
+
+    async def _run_async_execution(
+        self,
+        execution_id: str,
+        agent_name: str,
+        prompt: str,
+        context: dict[str, Any] | None,
+    ) -> None:
+        """백그라운드 실행 태스크."""
+        try:
+            result = await self.execute(agent_name, prompt, context=context)
+            self._executions[execution_id].update({
+                "status": "completed" if result.get("success") else "error",
+                "result": result.get("result"),
+                "error": result.get("error"),
+                "cost_usd": result.get("cost_usd", 0.0),
+                "duration_ms": result.get("duration_ms", 0),
+                "model": result.get("model", ""),
+                "session_id": result.get("session_id"),
+                "tx_id": result.get("tx_id"),
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+            })
+        except Exception as e:
+            self._executions[execution_id].update({
+                "status": "error",
+                "error": str(e),
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+            })
+        finally:
+            self._execution_tasks.pop(execution_id, None)
+
+    def get_execution(self, execution_id: str) -> dict[str, Any]:
+        """실행 상태 조회."""
+        if execution_id not in self._executions:
+            raise KeyError(f"Execution '{execution_id}' 미등록")
+        return self._executions[execution_id]
+
+    async def cancel_execution(self, execution_id: str) -> bool:
+        """실행 취소."""
+        task = self._execution_tasks.get(execution_id)
+        if task and not task.done():
+            task.cancel()
+            self._executions[execution_id]["status"] = "cancelled"
+            self._executions[execution_id]["completed_at"] = (
+                datetime.now(timezone.utc).isoformat()
+            )
+            self._execution_tasks.pop(execution_id, None)
+            return True
+        return False
 
     async def shutdown(self) -> None:
         """Context 종료 — 모든 Agent runtime shutdown."""

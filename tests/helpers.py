@@ -7,7 +7,9 @@ from typing import Any
 
 import yaml
 
-from aac.runtime.base import AgentRuntime, ExecutionResult, RuntimeStatus
+from collections.abc import AsyncIterator
+
+from aac.runtime.base import AgentRuntime, ExecutionResult, RuntimeStatus, StreamChunk
 
 
 # ─── Mock Runtime ─────────────────────────────────────
@@ -39,6 +41,22 @@ class MockRuntime(AgentRuntime):
             cost_usd=0.001,
             duration_ms=100,
             model="mock-model",
+        )
+
+    async def stream(
+        self,
+        prompt: str,
+        *,
+        system_prompt: str = "",
+        tools: list[dict[str, Any]] | None = None,
+        context: dict[str, Any] | None = None,
+        max_turns: int = 30,
+        timeout_seconds: int = 600,
+    ) -> AsyncIterator[StreamChunk]:
+        yield StreamChunk(type="text", content=f"mock streaming: {prompt}")
+        yield StreamChunk(
+            type="done",
+            metadata={"cost_usd": 0.001, "duration_ms": 100, "model": "mock-model"},
         )
 
     async def shutdown(self) -> None:
