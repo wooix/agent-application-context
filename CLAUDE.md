@@ -8,8 +8,7 @@ Spring Framework의 IoC/DI/AOP 개념을 AI Agent 오케스트레이션에 적�
 다양한 LLM Runtime(Claude Code, Gemini, OpenAI, Codex)을 bean처럼 등록/주입/관리하며,
 REST API endpoint를 통해 Agent를 실행한다.
 
-> **참고**: `aac` CLI는 `pyproject.toml`에 entrypoint가 정의되어 있으나 (`aac.cli.main:cli`) 아직 미구현 상태.
-> 서버 시작은 아래 "빌드 & 실행" 섹션의 Python 명령을 사용.
+> **참고**: `aac` CLI가 구현되어 있으며 (`aac.cli.main:cli`), `uv run aac` 또는 설치 후 `aac`로 사용 가능.
 
 ## 핵심 개념 매핑
 
@@ -31,7 +30,7 @@ REST API endpoint를 통해 Agent를 실행한다.
 - **structlog**: 구조화 로깅
 - **PyYAML**: YAML 파싱
 - **SQLite**: 감사 로그 (Phase 3)
-- **Click**: CLI (Phase 5 — 미구현)
+- **Click**: CLI (`src/aac/cli/main.py`)
 - **Textual**: TUI (Phase 7)
 
 ## 디렉토리 구조
@@ -57,8 +56,9 @@ src/aac/              # 코어 프레임워크
   server/             # FastAPI HTTP 서버
     app.py            # 앱 생성 + 인라인 라우트 정의
     routes/           # (placeholder — 현재 라우트는 app.py에 인라인)
-  cli/                # (stub — Phase 5 미구현)
-    commands/         # (stub)
+  cli/                # Click CLI 엔트리포인트
+    main.py           # aac start|validate|agents|...
+    commands/         # (확장용 하위 명령)
   lifecycle/          # (stub — Phase 3)
   orchestration/      # (stub — Phase 6)
   aspects/            # (stub — Aspect 런타임 처리)
@@ -78,11 +78,32 @@ resources/            # 리소스 정의 (YAML)
 # 의존성 설치
 uv sync --all-extras
 
-# 서버 시작
+# 서버 시작 (CLI)
+uv run aac start
+uv run aac start --port 9000 --strict
+
+# 서버 시작 (Python)
 uv run python -c "
 import asyncio; from aac.server.app import start_server
 asyncio.run(start_server('./resources', '127.0.0.1', 8800))
 "
+
+# YAML 검증 (CLI)
+uv run aac validate
+uv run aac validate -v
+
+# Agent/Tool/Skill 목록 (로컬)
+uv run aac agents --local
+uv run aac tools --local
+uv run aac skills --local
+
+# Agent 실행 (서버 필요)
+uv run aac execute claude-coder "Hello, World"
+uv run aac execute claude-coder "Hello" --stream
+uv run aac execute claude-coder "Hello" --async-mode
+
+# 상태 조회 (서버 필요)
+uv run aac status
 
 # YAML 검증 테스트
 uv run python -c "
@@ -169,9 +190,28 @@ uv run ruff format src/ tests/
 필수: `kind: Aspect`, `metadata.name`, `spec.type`, `spec.order`
 `spec.pointcut.events[]`: PreQuery, PostQuery, PreToolUse, PostToolUse, OnError
 
-## Phase 1 수용 기준 (현재)
+## Phase 수용 기준
 
+### Phase 1 — 코어 프레임워크
 - AC-1: `aac start` → 스캔 결과 로그 + `/api/status` 정상 응답 ✓
 - AC-2: `/api/agents` — `tools_loaded_count`, `skills` 목록 노출 ✓
-- AC-3: `/api/agents/{name}/execute` → 실행 + 로그 포맷 + 식별자 반환 (구현 완료, CLI 통합 미완)
+- AC-3: `/api/agents/{name}/execute` → 실행 + 로그 포맷 + 식별자 반환 ✓
 - AC-4: 잘못된 YAML → 부팅 전 검출 + 파일 경로/필드 포함 에러 ✓
+
+### Phase 2 — Multi-Runtime
+- 자동 발견 (resources/runtimes/*.yaml) ✓
+- claude-code, gemini-mcp, openai-mcp, codex-cli 어댑터 ✓
+
+### Phase 3 — AOP 위빙
+- AspectEngine + AuditLogging/ExecutionLogging/ToolTracking Handler ✓
+- Aspect manifest 로딩 + pointcut 매칭 ✓
+
+### Phase 4 — 스트리밍/비동기
+- SSE 스트리밍 (Accept: text/event-stream) ✓
+- 비동기 실행 (?async=true → 202+폴링) ✓
+- WebSocket 이벤트 퍼블리셔 ✓
+
+### Phase 5 — CLI
+- `aac start/validate/agents/tools/skills/status/execute/poll/cancel` ✓
+- Rich 테이블/패널 출력 ✓
+- 로컬 모드 (--local) + 서버 모드 지원 ✓
