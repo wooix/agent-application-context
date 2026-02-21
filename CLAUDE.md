@@ -12,15 +12,15 @@ REST API endpoint를 통해 Agent를 실행한다.
 
 ## 핵심 개념 매핑
 
-| Spring | AAC |
-|---|---|
+| Spring               | AAC                                              |
+| -------------------- | ------------------------------------------------ |
 | `ApplicationContext` | `AgentApplicationContext` (`src/aac/context.py`) |
-| `Bean` | `AgentInstance` (`src/aac/models/instance.py`) |
-| `BeanDefinition` | `agent.yaml` (`resources/agents/*/agent.yaml`) |
-| `@ComponentScan` | `AgentScanner` (`src/aac/scanner.py`) |
-| `BeanFactory` | `AgentFactory` (`src/aac/factory.py`) |
-| `DataSource` | `AgentRuntime` (`src/aac/runtime/base.py`) |
-| `@Aspect` | `AspectManifest` (`resources/aspects/*.yaml`) |
+| `Bean`               | `AgentInstance` (`src/aac/models/instance.py`)   |
+| `BeanDefinition`     | `agent.yaml` (`resources/agents/*/agent.yaml`)   |
+| `@ComponentScan`     | `AgentScanner` (`src/aac/scanner.py`)            |
+| `BeanFactory`        | `AgentFactory` (`src/aac/factory.py`)            |
+| `DataSource`         | `AgentRuntime` (`src/aac/runtime/base.py`)       |
+| `@Aspect`            | `AspectManifest` (`resources/aspects/*.yaml`)    |
 
 ## 기술 스택
 
@@ -59,8 +59,10 @@ src/aac/              # 코어 프레임워크
   cli/                # Click CLI 엔트리포인트
     main.py           # aac start|validate|agents|...
     commands/         # (확장용 하위 명령)
-  lifecycle/          # (stub — Phase 3)
-  orchestration/      # (stub — Phase 6)
+  lifecycle/          # Agent 생명주기 관리
+    manager.py        # LifecycleManager (상태 전이/건강 검사/종료)
+  orchestration/      # 워크플로우 오케스트레이션
+    engine.py         # WorkflowEngine (순차/병렬/조건 분기)
   aspects/            # (stub — Aspect 런타임 처리)
 src/ui/               # UI 계층 (aac와 동일 레벨)
   tui/                # TUI (textual) — Phase 7
@@ -140,15 +142,15 @@ uv run ruff format src/ tests/
 
 `src/aac/server/app.py`에 인라인 정의된 라우트:
 
-| Method | Path | 설명 |
-|---|---|---|
-| `GET` | `/api/health` | 헬스체크 |
-| `GET` | `/api/status` | Context 상태 (FR-9.1) |
-| `GET` | `/api/agents` | Agent 목록 — `tools_loaded_count`, `skills` 포함 (AC-2) |
-| `GET` | `/api/agents/{name}` | Agent 상세 정보 |
-| `POST` | `/api/agents/{name}/execute` | Agent 실행 (FR-9.2) |
-| `GET` | `/api/tools` | Tool 목록 |
-| `GET` | `/api/skills` | Skill 목록 |
+| Method | Path                         | 설명                                                    |
+| ------ | ---------------------------- | ------------------------------------------------------- |
+| `GET`  | `/api/health`                | 헬스체크                                                |
+| `GET`  | `/api/status`                | Context 상태 (FR-9.1)                                   |
+| `GET`  | `/api/agents`                | Agent 목록 — `tools_loaded_count`, `skills` 포함 (AC-2) |
+| `GET`  | `/api/agents/{name}`         | Agent 상세 정보                                         |
+| `POST` | `/api/agents/{name}/execute` | Agent 실행 (FR-9.2)                                     |
+| `GET`  | `/api/tools`                 | Tool 목록                                               |
+| `GET`  | `/api/skills`                | Skill 목록                                              |
 
 ## 코딩 컨벤션
 
@@ -163,14 +165,14 @@ uv run ruff format src/ tests/
 
 ## 핵심 설계 결정 (Decision Records)
 
-| ID | 결정 |
-|---|---|
+| ID   | 결정                                                                                           |
+| ---- | ---------------------------------------------------------------------------------------------- |
 | DR-1 | Tool 식별: `{bundle}/{item}`. 다른 번들 간 충돌: last-wins + 경고. `strict: true` 시 기동 실패 |
-| DR-2 | Prompt 합성: `system_prompt` → `prompt_file` → skill 문서. 중복 skill 무시 |
-| DR-3 | 식별자: `sess_{uuid}`, `tx_{seq:03d}`, `exec_{uuid}` |
-| DR-5 | Execute API: 기본 동기. `Accept: text/event-stream` → SSE. `?async=true` → 202+폴링 |
-| DR-7 | `max_turns`는 `spec.limits.max_turns`에만 정의. 기본값 30 |
-| DR-8 | Scope: singleton(Context 수명), task(워크플로우 단위), session(API 요청 단위) |
+| DR-2 | Prompt 합성: `system_prompt` → `prompt_file` → skill 문서. 중복 skill 무시                     |
+| DR-3 | 식별자: `sess_{uuid}`, `tx_{seq:03d}`, `exec_{uuid}`                                           |
+| DR-5 | Execute API: 기본 동기. `Accept: text/event-stream` → SSE. `?async=true` → 202+폴링            |
+| DR-7 | `max_turns`는 `spec.limits.max_turns`에만 정의. 기본값 30                                      |
+| DR-8 | Scope: singleton(Context 수명), task(워크플로우 단위), session(API 요청 단위)                  |
 
 ## 리소스 YAML 스키마 요약
 
@@ -189,6 +191,10 @@ uv run ruff format src/ tests/
 ### Aspect (`resources/aspects/*.yaml`)
 필수: `kind: Aspect`, `metadata.name`, `spec.type`, `spec.order`
 `spec.pointcut.events[]`: PreQuery, PostQuery, PreToolUse, PostToolUse, OnError
+
+### Workflow (`resources/workflows/*.yaml`)
+필수: `kind: Workflow`, `metadata.name`, `spec.steps[]`
+각 step: `name`, `type` (agent|parallel|condition), `agent`, `prompt`, `on_failure`, `input_from`
 
 ## Phase 수용 기준
 
@@ -215,3 +221,14 @@ uv run ruff format src/ tests/
 - `aac start/validate/agents/tools/skills/status/execute/poll/cancel` ✓
 - Rich 테이블/패널 출력 ✓
 - 로컬 모드 (--local) + 서버 모드 지원 ✓
+
+### Phase 6 — 워크플로우
+- WorkflowEngine — 순차/병렬/조건 분기 실행 ✓
+- WorkflowManifest YAML 스키마 ✓
+- 입력 연결 (input_from), 템플릿 변수, 재시도, 비용 상한 ✓
+
+### Phase 7 — Lifecycle Manager
+- 상태 전이 검증 (VALID_TRANSITIONS) ✓
+- 건강 검사 (HealthCheck) ✓
+- 우아한 종료 (graceful shutdown) ✓
+- 생명주기 이벤트 콜백 ✓
