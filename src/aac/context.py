@@ -20,6 +20,10 @@ from typing import Any
 
 import structlog
 
+from aac.aspects.audit_logging import AuditLoggingHandler
+from aac.aspects.engine import AspectContext, AspectEngine, AspectEventType
+from aac.aspects.execution_logging import ExecutionLoggingHandler
+from aac.aspects.tool_tracking import ToolTrackingHandler
 from aac.di.skill_registry import SkillRegistry
 from aac.di.tool_registry import ToolRegistry
 from aac.factory import AgentFactory
@@ -60,6 +64,7 @@ class AgentApplicationContext:
         self._runtime_registry = RuntimeRegistry()
         self._tool_registry = ToolRegistry(strict=strict_tools)
         self._skill_registry = SkillRegistry()
+        self._aspect_engine = AspectEngine()
 
         # Agent 관리
         self._agents: dict[str, AgentInstance] = {}
@@ -95,6 +100,10 @@ class AgentApplicationContext:
     @property
     def runtime_registry(self) -> RuntimeRegistry:
         return self._runtime_registry
+
+    @property
+    def aspect_engine(self) -> AspectEngine:
+        return self._aspect_engine
 
     async def start(self) -> None:
         """Context 전체 기동 — Spring Boot의 SpringApplication.run()."""
@@ -146,14 +155,23 @@ class AgentApplicationContext:
         for skill in self._scan_result.skills:
             self._skill_registry.register(skill)
 
-        # 4. Factory 생성
+        # 4. Aspect handler 타입 등록 + manifest 등록
+        self._aspect_engine.register_handler_type("AuditLoggingAspect", AuditLoggingHandler)
+        self._aspect_engine.register_handler_type("ToolTrackingAspect", ToolTrackingHandler)
+        self._aspect_engine.register_handler_type(
+            "ExecutionLoggingAspect", ExecutionLoggingHandler
+        )
+        for aspect in self._scan_result.aspects:
+            self._aspect_engine.register(aspect)
+
+        # 5. Factory 생성
         self._factory = AgentFactory(
             self._runtime_registry,
             self._tool_registry,
             self._skill_registry,
         )
 
-        # 5. Agent 생성 (eager / lazy)
+        # 6. Agent 생성 (eager / lazy)
         boot_log("🚀 Initializing eager agents...")
         for manifest in self._scan_result.agents:
             self._manifests[manifest.metadata.name] = manifest
@@ -232,6 +250,16 @@ class AgentApplicationContext:
 
         aac_log(agent_name, session_id, tx_id, f'▶ STARTING query: "{prompt[:80]}"')
 
+        # Aspect: PreQuery
+        aspect_ctx = AspectContext(
+            agent_name=agent_name,
+            session_id=session_id,
+            tx_id=tx_id,
+            execution_id=execution_id,
+            prompt=prompt,
+        )
+        await self._aspect_engine.apply(AspectEventType.PRE_QUERY, aspect_ctx)
+
         agent.status = AgentStatus.EXECUTING
 
         # tool 정보 구성
@@ -253,6 +281,17 @@ class AgentApplicationContext:
         agent.query_count += 1
         agent.total_cost_usd += result.cost_usd
         agent.total_duration_ms += result.duration_ms
+
+        # Aspect: PostQuery / OnError
+        aspect_ctx.response = result.response
+        aspect_ctx.error = result.error
+        aspect_ctx.cost_usd = result.cost_usd
+        aspect_ctx.duration_ms = result.duration_ms
+        aspect_ctx.model = result.model
+
+        if result.error:
+            await self._aspect_engine.apply(AspectEventType.ON_ERROR, aspect_ctx)
+        await self._aspect_engine.apply(AspectEventType.POST_QUERY, aspect_ctx)
 
         status_icon = "✓" if result.success else "✗"
         aac_log(
