@@ -22,6 +22,7 @@ from aac.models.manifest import (
     AgentManifest,
     AspectManifest,
     ResourceKind,
+    RuntimeManifest,
     SkillManifest,
     ToolManifest,
 )
@@ -37,6 +38,7 @@ class ScanResult:
     tools: list[ToolManifest] = field(default_factory=list)
     skills: list[SkillManifest] = field(default_factory=list)
     aspects: list[AspectManifest] = field(default_factory=list)
+    runtimes: list[RuntimeManifest] = field(default_factory=list)
     errors: list[ScanError] = field(default_factory=list)
 
     @property
@@ -72,7 +74,15 @@ class AgentScanner:
         """resources/ 전체 스캔 → ScanResult."""
         result = ScanResult()
 
-        # tools (먼저 스캔 — agent의 tool ref 해석에 필요)
+        # runtimes (가장 먼저 스캔 — runtime 등록이 선행되어야 함)
+        runtimes_dir = self._base_dir / "runtimes"
+        if runtimes_dir.exists():
+            for yaml_file in sorted(runtimes_dir.glob("*.yaml")):
+                parsed = self._parse_yaml(yaml_file, RuntimeManifest, result)
+                if parsed:
+                    result.runtimes.append(parsed)
+
+        # tools (agent의 tool ref 해석에 필요)
         tools_dir = self._base_dir / "tools"
         if tools_dir.exists():
             for manifest in self._scan_directory(tools_dir, "tool.yaml", ToolManifest, result):
@@ -186,4 +196,6 @@ class AgentScanner:
             return ResourceKind.SKILL.value
         if model_cls is AspectManifest:
             return ResourceKind.ASPECT.value
+        if model_cls is RuntimeManifest:
+            return ResourceKind.RUNTIME.value
         return None

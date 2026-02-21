@@ -6,9 +6,9 @@ metadata:
   version: "1.0.0"
   tags: [review, gemini]
 spec:
-  runtime: claude-code       # Phase 2에서 gemini-mcp로 전환
+  runtime: gemini-mcp
   runtime_config:
-    model: sonnet
+    model: gemini-2.5-pro
   tools:
     - ref: file-ops
   skills:

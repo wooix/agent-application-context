@@ -1,0 +1,11 @@
+apiVersion: aac/v1
+kind: Runtime
+metadata:
+  name: openai-mcp
+  description: "OpenAI CLI/MCP 기반 런타임"
+spec:
+  type: OpenAIMCPRuntime
+  module: aac.runtime.openai_mcp
+  class: OpenAIMCPRuntime
+  default_config:
+    model: gpt-4o

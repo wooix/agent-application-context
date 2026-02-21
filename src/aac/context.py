@@ -109,6 +109,15 @@ class AgentApplicationContext:
         scanner = AgentScanner(self._resources_dir)
         self._scan_result = scanner.scan_all()
 
+        # 2.5. Runtime 자동 발견 (resources/runtimes/*.yaml)
+        if self._scan_result.runtimes:
+            discovered = self._runtime_registry.discover(self._scan_result.runtimes)
+            boot_log(
+                f"🔌 Scanning resources/runtimes/ → "
+                f"{len(self._scan_result.runtimes)} manifests, "
+                f"{len(discovered)} registered"
+            )
+
         # 에러 보고
         if self._scan_result.errors:
             for err in self._scan_result.errors:

@@ -1,0 +1,12 @@
+apiVersion: aac/v1
+kind: Runtime
+metadata:
+  name: codex-cli
+  description: "Codex CLI 기반 런타임"
+spec:
+  type: CodexCLIRuntime
+  module: aac.runtime.codex_cli
+  class: CodexCLIRuntime
+  default_config:
+    model: codex-mini
+    approval_mode: full-auto

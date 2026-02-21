@@ -1,0 +1,12 @@
+apiVersion: aac/v1
+kind: Runtime
+metadata:
+  name: gemini-mcp
+  description: "Gemini CLI/MCP 기반 런타임"
+spec:
+  type: GeminiMCPRuntime
+  module: aac.runtime.gemini_mcp
+  class: GeminiMCPRuntime
+  default_config:
+    model: gemini-2.5-pro
+    sandbox: true

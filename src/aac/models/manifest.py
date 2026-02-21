@@ -19,6 +19,7 @@ class ResourceKind(str, Enum):
     TOOL = "Tool"
     SKILL = "Skill"
     ASPECT = "Aspect"
+    RUNTIME = "Runtime"
     WORKFLOW = "Workflow"
 
 
@@ -233,5 +234,34 @@ class AspectManifest(BaseModel):
     kind: Literal[ResourceKind.ASPECT] = ResourceKind.ASPECT
     metadata: AspectMetadata
     spec: AspectSpec
+
+    source_path: str | None = Field(default=None, exclude=True)
+
+
+# ─── Runtime ─────────────────────────────────────────────
+
+class RuntimeMetadata(BaseModel):
+    name: str
+    description: str = ""
+
+
+class RuntimeSpec(BaseModel):
+    """Runtime 선언적 정의 — module + class로 자동 로드."""
+
+    type: str                       # 클래스 이름 (참고용)
+    module: str                     # Python 모듈 경로 (예: aac.runtime.gemini_mcp)
+    class_name: str = Field(alias="class")  # 클래스명 (예: GeminiMCPRuntime)
+    default_config: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = {"populate_by_name": True}
+
+
+class RuntimeManifest(BaseModel):
+    """Runtime YAML 스키마 (resources/runtimes/*.yaml)."""
+
+    apiVersion: str = "aac/v1"  # noqa: N815
+    kind: Literal[ResourceKind.RUNTIME] = ResourceKind.RUNTIME
+    metadata: RuntimeMetadata
+    spec: RuntimeSpec
 
     source_path: str | None = Field(default=None, exclude=True)
