@@ -1,0 +1,14 @@
+apiVersion: aac/v1
+kind: Aspect
+metadata:
+  name: transaction
+  description: "트랜잭션 관리 — 워크플로우 step 단위 원자성 보장"
+spec:
+  type: TransactionAspect
+  order: 40
+  pointcut:
+    events: [PreQuery, PostQuery, OnError]
+    tags: [workflow]
+  config:
+    snapshot_dir: data/snapshots/
+    auto_rollback: true

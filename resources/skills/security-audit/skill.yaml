@@ -1,0 +1,11 @@
+apiVersion: aac/v1
+kind: Skill
+metadata:
+  name: security-audit
+  description: "보안 감사 수행 가이드라인"
+  tags: [security, audit]
+spec:
+  instruction_file: ./SECURITY_AUDIT.md
+  required_tools:
+    - file-ops
+    - code-exec

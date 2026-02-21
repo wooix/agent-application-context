@@ -1,0 +1,30 @@
+apiVersion: aac/v1
+kind: Tool
+metadata:
+  name: web-tools
+  description: "웹 검색 및 페이지 조회 도구"
+  tags: [web, search]
+spec:
+  items:
+    - name: WebSearch
+      description: "웹 검색 수행"
+      input_schema:
+        type: object
+        properties:
+          query:
+            type: string
+            description: "검색 쿼리"
+        required: [query]
+
+    - name: WebFetch
+      description: "URL에서 콘텐츠 가져오기"
+      input_schema:
+        type: object
+        properties:
+          url:
+            type: string
+            description: "가져올 URL"
+          prompt:
+            type: string
+            description: "콘텐츠 처리 프롬프트"
+        required: [url]

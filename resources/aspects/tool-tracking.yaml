@@ -1,0 +1,13 @@
+apiVersion: aac/v1
+kind: Aspect
+metadata:
+  name: tool-tracking
+  description: "Tool 로딩/사용 추적 — Agent별 tool 사용 통계 기록"
+spec:
+  type: ToolTrackingAspect
+  order: 20
+  pointcut:
+    events: [PreToolUse, PostToolUse]
+  config:
+    log_input: false
+    log_output_summary: true

@@ -1,0 +1,34 @@
+# AgentApplicationContext 글로벌 설정
+apiVersion: aac/v1
+
+server:
+  host: "127.0.0.1"
+  port: 8800
+  # api_key: ""  # 또는 환경변수 AAC_API_KEY
+
+resources:
+  base_dir: "./resources"
+  agents_dir: "agents"
+  tools_dir: "tools"
+  skills_dir: "skills"
+  aspects_dir: "aspects"
+  workflows_dir: "workflows"
+
+logging:
+  level: "INFO"
+  format: "[{timestamp}] [{agent}] [{session}:{tx}] {message}"
+  file_dir: "./logs/execution"
+
+audit:
+  db_path: "./data/audit.db"
+  mask_prompts: true
+  mask_responses: true
+
+transaction:
+  snapshot_dir: "./data/snapshots"
+
+defaults:
+  max_turns: 30
+  timeout_seconds: 600
+  scope: "singleton"
+  strict_tools: false

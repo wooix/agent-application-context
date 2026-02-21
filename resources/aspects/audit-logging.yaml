@@ -1,0 +1,14 @@
+apiVersion: aac/v1
+kind: Aspect
+metadata:
+  name: audit-logging
+  description: "감사 로그 기록 — 모든 Agent 실행을 SQLite에 기록"
+spec:
+  type: AuditLoggingAspect
+  order: 10
+  pointcut:
+    events: [PreQuery, PostQuery, OnError]
+  config:
+    db_path: data/audit.db
+    mask_sensitive: true
+    summary_max_length: 200

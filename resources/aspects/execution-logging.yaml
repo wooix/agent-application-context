@@ -1,0 +1,14 @@
+apiVersion: aac/v1
+kind: Aspect
+metadata:
+  name: execution-logging
+  description: "실행 로그 — 통일 포맷으로 콘솔/파일 로그 출력"
+spec:
+  type: ExecutionLoggingAspect
+  order: 30
+  pointcut:
+    events: [PreQuery, PostQuery, PreToolUse, PostToolUse, OnError]
+  config:
+    console: true
+    file_dir: logs/execution/
+    format: "[HH:mm:ss:SSS] [Agent] [session:tx] msg"

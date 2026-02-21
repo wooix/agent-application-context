@@ -1,0 +1,25 @@
+apiVersion: aac/v1
+kind: Agent
+metadata:
+  name: gemini-critic
+  description: "Gemini 기반 코드 리뷰 Agent"
+  version: "1.0.0"
+  tags: [review, gemini]
+spec:
+  runtime: claude-code       # Phase 2에서 gemini-mcp로 전환
+  runtime_config:
+    model: sonnet
+  tools:
+    - ref: file-ops
+  skills:
+    - ref: code-review
+  system_prompt: |
+    당신은 시니어 코드 리뷰어입니다.
+    코드의 품질, 가독성, 유지보수성을 평가합니다.
+    건설적이고 구체적인 피드백을 제공합니다.
+  scope: singleton
+  lazy: true
+  capabilities: [code-review, quality-assessment]
+  limits:
+    max_turns: 15
+    timeout_seconds: 300

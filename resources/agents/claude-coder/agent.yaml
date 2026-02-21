@@ -1,0 +1,32 @@
+apiVersion: aac/v1
+kind: Agent
+metadata:
+  name: claude-coder
+  description: "Claude Code 기반 코드 작성 Agent"
+  version: "1.0.0"
+  tags: [coding, claude]
+spec:
+  runtime: claude-code
+  runtime_config:
+    model: sonnet
+  tools:
+    - ref: file-ops
+    - ref: code-exec
+    - name: WebSearch
+  skills:
+    - ref: code-review
+    - ref: security-audit
+  system_prompt: |
+    당신은 시니어 소프트웨어 엔지니어입니다.
+    코드를 작성할 때 다음 원칙을 따릅니다:
+    - 읽기 쉽고 유지보수 가능한 코드 작성
+    - 적절한 에러 처리와 로깅
+    - 보안 취약점 방지
+    - 테스트 가능한 설계
+  prompt_file: ./prompts/coder-prompt.md
+  scope: singleton
+  lazy: false
+  capabilities: [code-writing, refactoring, debugging]
+  limits:
+    max_turns: 30
+    timeout_seconds: 600

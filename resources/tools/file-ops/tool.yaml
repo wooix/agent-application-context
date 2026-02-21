@@ -1,0 +1,66 @@
+apiVersion: aac/v1
+kind: Tool
+metadata:
+  name: file-ops
+  description: "파일 읽기/쓰기/편집 도구 모음"
+  tags: [filesystem, io]
+spec:
+  items:
+    - name: Read
+      description: "파일 내용 읽기"
+      input_schema:
+        type: object
+        properties:
+          file_path:
+            type: string
+            description: "읽을 파일의 절대 경로"
+        required: [file_path]
+
+    - name: Write
+      description: "파일 생성 또는 덮어쓰기"
+      input_schema:
+        type: object
+        properties:
+          file_path:
+            type: string
+            description: "쓸 파일의 절대 경로"
+          content:
+            type: string
+            description: "파일에 쓸 내용"
+        required: [file_path, content]
+
+    - name: Edit
+      description: "파일 부분 수정 (old_string → new_string)"
+      input_schema:
+        type: object
+        properties:
+          file_path:
+            type: string
+          old_string:
+            type: string
+          new_string:
+            type: string
+        required: [file_path, old_string, new_string]
+
+    - name: Glob
+      description: "파일 패턴 검색"
+      input_schema:
+        type: object
+        properties:
+          pattern:
+            type: string
+            description: "글로브 패턴 (예: **/*.py)"
+        required: [pattern]
+
+    - name: Grep
+      description: "파일 내용 검색 (정규식)"
+      input_schema:
+        type: object
+        properties:
+          pattern:
+            type: string
+            description: "검색할 정규식 패턴"
+          path:
+            type: string
+            description: "검색 대상 디렉토리"
+        required: [pattern]

@@ -1,0 +1,10 @@
+apiVersion: aac/v1
+kind: Skill
+metadata:
+  name: doc-writing
+  description: "기술 문서 작성 가이드라인"
+  tags: [documentation, writing]
+spec:
+  instruction_file: ./DOC_WRITING.md
+  required_tools:
+    - file-ops

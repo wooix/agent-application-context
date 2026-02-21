@@ -1,0 +1,11 @@
+apiVersion: aac/v1
+kind: Skill
+metadata:
+  name: test-writing
+  description: "테스트 코드 작성 가이드라인"
+  tags: [testing, quality]
+spec:
+  instruction_file: ./TEST_WRITING.md
+  required_tools:
+    - file-ops
+    - code-exec
