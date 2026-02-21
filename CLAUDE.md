@@ -1,10 +1,15 @@
-# CLAUDE.md — AgentApplicationContext (AAC)
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## 프로젝트 개요
 
 Spring Framework의 IoC/DI/AOP 개념을 AI Agent 오케스트레이션에 적용한 Python 프레임워크.
 다양한 LLM Runtime(Claude Code, Gemini, OpenAI, Codex)을 bean처럼 등록/주입/관리하며,
-`aac start`로 서버를 구동하여 REST API endpoint를 제공한다.
+REST API endpoint를 통해 Agent를 실행한다.
+
+> **참고**: `aac` CLI는 `pyproject.toml`에 entrypoint가 정의되어 있으나 (`aac.cli.main:cli`) 아직 미구현 상태.
+> 서버 시작은 아래 "빌드 & 실행" 섹션의 Python 명령을 사용.
 
 ## 핵심 개념 매핑
 
@@ -26,7 +31,7 @@ Spring Framework의 IoC/DI/AOP 개념을 AI Agent 오케스트레이션에 적�
 - **structlog**: 구조화 로깅
 - **PyYAML**: YAML 파싱
 - **SQLite**: 감사 로그 (Phase 3)
-- **Click**: CLI (Phase 5)
+- **Click**: CLI (Phase 5 — 미구현)
 - **Textual**: TUI (Phase 7)
 
 ## 디렉토리 구조
@@ -50,7 +55,13 @@ src/aac/              # 코어 프레임워크
   logging/            # 통일 로그 시스템
     formatter.py      # [HH:mm:ss:SSS] [Agent] [sid:txid] msg
   server/             # FastAPI HTTP 서버
-    app.py            # 앱 생성 + 라우트 정의
+    app.py            # 앱 생성 + 인라인 라우트 정의
+    routes/           # (placeholder — 현재 라우트는 app.py에 인라인)
+  cli/                # (stub — Phase 5 미구현)
+    commands/         # (stub)
+  lifecycle/          # (stub — Phase 3)
+  orchestration/      # (stub — Phase 6)
+  aspects/            # (stub — Aspect 런타임 처리)
 src/ui/               # UI 계층 (aac와 동일 레벨)
   tui/                # TUI (textual) — Phase 7
   gui/                # GUI (React) — Phase 8
@@ -59,7 +70,6 @@ resources/            # 리소스 정의 (YAML)
   tools/              # Tool 번들 정의 (tool.yaml)
   skills/             # Skill 정의 (skill.yaml + SKILL.md)
   aspects/            # Aspect 정의 (*.yaml)
-  workflows/          # 워크플로우 정의 — Phase 6
 ```
 
 ## 빌드 & 실행
@@ -70,8 +80,7 @@ uv sync --all-extras
 
 # 서버 시작
 uv run python -c "
-import asyncio
-from aac.server.app import start_server
+import asyncio; from aac.server.app import start_server
 asyncio.run(start_server('./resources', '127.0.0.1', 8800))
 "
 
@@ -84,7 +93,41 @@ print(f'Agents: {len(result.agents)}, Tools: {result.total_tools}, Errors: {len(
 
 # 테스트 실행
 uv run pytest tests/ -v
+
+# 단일 테스트 실행
+uv run pytest tests/test_scanner.py -v -k "test_name"
+
+# Lint
+uv run ruff check src/ tests/
+
+# Format
+uv run ruff format src/ tests/
 ```
+
+## 부트 시퀀스
+
+`AgentApplicationContext.start()` 기동 순서 (`src/aac/context.py`):
+
+1. 기본 Runtime 등록 (`claude-code` → `ClaudeCodeRuntime`)
+2. `AgentScanner.scan_all()` — tools → skills → aspects → agents 순서로 스캔
+3. `ToolRegistry` / `SkillRegistry`에 manifest 등록
+4. `AgentFactory` 생성 (RuntimeRegistry + ToolRegistry + SkillRegistry 주입)
+5. eager agent 초기화 (`spec.lazy: false`), lazy agent는 placeholder만 등록
+6. FastAPI 서버 시작 (`create_app()` → `uvicorn.Server`)
+
+## API 엔드포인트
+
+`src/aac/server/app.py`에 인라인 정의된 라우트:
+
+| Method | Path | 설명 |
+|---|---|---|
+| `GET` | `/api/health` | 헬스체크 |
+| `GET` | `/api/status` | Context 상태 (FR-9.1) |
+| `GET` | `/api/agents` | Agent 목록 — `tools_loaded_count`, `skills` 포함 (AC-2) |
+| `GET` | `/api/agents/{name}` | Agent 상세 정보 |
+| `POST` | `/api/agents/{name}/execute` | Agent 실행 (FR-9.2) |
+| `GET` | `/api/tools` | Tool 목록 |
+| `GET` | `/api/skills` | Skill 목록 |
 
 ## 코딩 컨벤션
 
@@ -94,6 +137,8 @@ uv run pytest tests/ -v
 - **모델**: Pydantic v2 (`BaseModel`, `model_validate`)
 - **로깅**: `structlog.get_logger()` — 구조화 로그
 - **콘솔 로그 포맷**: `[HH:mm:ss:SSS] [Agent] [sessionId:txId] msg`
+- **Linter**: ruff — `line-length = 100`, `target-version = "py312"`, select: `["E", "F", "I", "N", "W", "UP"]`
+- **테스트**: pytest — `asyncio_mode = "auto"`, `pythonpath = ["src"]`
 
 ## 핵심 설계 결정 (Decision Records)
 
@@ -128,5 +173,5 @@ uv run pytest tests/ -v
 
 - AC-1: `aac start` → 스캔 결과 로그 + `/api/status` 정상 응답 ✓
 - AC-2: `/api/agents` — `tools_loaded_count`, `skills` 목록 노출 ✓
-- AC-3: `/api/agents/{name}/execute` → 실행 + 로그 포맷 + 식별자 반환
+- AC-3: `/api/agents/{name}/execute` → 실행 + 로그 포맷 + 식별자 반환 (구현 완료, CLI 통합 미완)
 - AC-4: 잘못된 YAML → 부팅 전 검출 + 파일 경로/필드 포함 에러 ✓
