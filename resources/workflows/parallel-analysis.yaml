@@ -1,0 +1,48 @@
+# 병렬 실행 + 조건 분기 워크플로우 예시
+apiVersion: aac/v1
+kind: Workflow
+metadata:
+  name: parallel-analysis
+  description: "병렬 분석 → 조건부 후처리 파이프라인"
+  tags:
+    - parallel
+    - analysis
+
+spec:
+  context:
+    target: "src/aac/context.py"
+
+  steps:
+    - name: parallel-review
+      type: parallel
+      steps:
+        - name: security-check
+          type: agent
+          agent: claude-coder
+          prompt: "{{target}} 파일의 보안 취약점을 분석해줘"
+          on_failure: skip
+
+        - name: performance-check
+          type: agent
+          agent: gemini-critic
+          prompt: "{{target}} 파일의 성능 이슈를 분석해줘"
+          on_failure: skip
+
+    - name: needs-fix
+      type: condition
+      condition: "steps.security-check.success"
+      if_true: apply-fix
+      if_false: skip-fix
+
+    - name: apply-fix
+      type: agent
+      agent: claude-coder
+      prompt: "보안 분석 결과를 바탕으로 수정 코드를 생성해줘"
+      input_from: security-check
+      on_failure: stop
+
+    - name: skip-fix
+      type: agent
+      agent: claude-coder
+      prompt: "보안 점검 결과가 없어 건너뜁니다"
+      on_failure: skip

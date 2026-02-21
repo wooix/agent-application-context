@@ -1,0 +1,38 @@
+# 코드 생성 → 리뷰 → 테스트 워크플로우 예시
+apiVersion: aac/v1
+kind: Workflow
+metadata:
+  name: code-review-pipeline
+  description: "코드 생성 → 리뷰 → 테스트 작성 파이프라인"
+  tags:
+    - pipeline
+    - review
+
+spec:
+  context:
+    project: "AAC"
+    language: "Python"
+
+  steps:
+    - name: generate-code
+      type: agent
+      agent: claude-coder
+      prompt: "{{language}}로 {{project}} 프로젝트의 유틸리티 함수를 생성해줘"
+      on_failure: stop
+      timeout_seconds: 300
+
+    - name: review-code
+      type: agent
+      agent: gemini-critic
+      prompt: "아래 코드를 리뷰해줘. 보안, 성능, 가독성 관점으로."
+      input_from: generate-code
+      on_failure: skip
+      timeout_seconds: 300
+
+    - name: write-tests
+      type: agent
+      agent: claude-coder
+      prompt: "아래 코드에 대한 pytest 테스트를 작성해줘."
+      input_from: generate-code
+      on_failure: stop
+      timeout_seconds: 300
